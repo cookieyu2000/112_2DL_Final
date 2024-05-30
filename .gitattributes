@@ -1,0 +1,6 @@
+# 将所有文本文件的换行符处理为 LF
+* text=auto
+
+# 为特定文件设置换行符处理方式
+data/sample_submission.csv text eol=crlf
+data/train.csv text eol=crlf
