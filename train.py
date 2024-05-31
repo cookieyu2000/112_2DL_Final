@@ -12,21 +12,21 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from torchsummary import summary
-import subprocess  # 添加这一行
-import webbrowser  # 添加这一行
-import time  # 添加这一行
+import subprocess
+import webbrowser
+import time
 
 # 启动 TensorBoard
 def start_tensorboard(log_dir):
-    subprocess.Popen(['tensorboard', '--logdir', log_dir, '--port', '6006'])
+    subprocess.Popen(['tensorboard', '--logdir', log_dir, '--port', '3000'])
     time.sleep(5)  # 等待 TensorBoard 启动
-    webbrowser.open('http://localhost:6006')
+    webbrowser.open('http://localhost:3000')
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = CassavaResNet50().to(device)
 optimizer = Adam(model.parameters(), lr=config.LR)
 criterion = CrossEntropyLoss()
-scheduler = ReduceLROnPlateau(optimizer, 'min', patience=10)
+scheduler = ReduceLROnPlateau(optimizer, 'min', patience=config.PATIENCE, factor=config.DECAY_FACTOR, verbose=True)
 
 # 打印模型摘要
 summary(model, (3, 512, 512))
@@ -40,6 +40,11 @@ def train_model():
     best_train_acc = 0.0
     best_train_loss = float('inf')
     best_valid_acc = 0.0
+    best_epoch = 0  # 用于记录最佳模型保存的 epoch
+
+    # Early stopping 參數
+    early_stop_patience = config.early_stop_patience  # Early stopping 設為15
+    epochs_no_improve = 0
 
     for epoch in range(config.EPOCHS):
         model.train()
@@ -82,27 +87,32 @@ def train_model():
 
         if valid_loss < best_valid_loss:
             best_valid_loss = valid_loss
-
-        if valid_acc > best_valid_acc:
             best_valid_acc = valid_acc
+            best_epoch = epoch + 1  # 記錄保存最佳模型的 epoch
+            epochs_no_improve = 0
+            torch.save(model.state_dict(), 'weights/best_model.pth')  # 保存最佳模型
+        else:
+            epochs_no_improve += 1
 
         # 將指標記錄到 TensorBoard
-        writer.add_scalar('Loss/train', train_loss, epoch)
-        writer.add_scalar('Accuracy/train', train_acc, epoch)
-        writer.add_scalar('Loss/valid', valid_loss, epoch)
-        writer.add_scalar('Accuracy/valid', valid_acc, epoch)
+        writer.add_scalars('Loss', {'train': train_loss, 'valid': valid_loss}, epoch)
+        writer.add_scalars('Accuracy', {'train': train_acc, 'valid': valid_acc}, epoch)
 
         # 打印訓練和驗證的損失和準確率
         print(f"Epoch [{epoch+1}/{config.EPOCHS}], "
               f"Train Loss: {train_loss:.4f}, Train Accuracy: {train_acc:.4f}, "
-              f"Valid Loss: {valid_loss:.4f}, Valid Accuracy: {valid_acc:.4f}")
-
-        # 保存最佳模型
-        if valid_loss < best_valid_loss:
-            torch.save(model.state_dict(), 'weights/best_model.pth')
+              f"Valid Loss: {valid_loss:.4f}, Valid Accuracy: {valid_acc:.4f}, "
+              f"Learning Rate: {optimizer.param_groups[0]['lr']:.6f}")
+        print(f"Epochs without improvement: {epochs_no_improve}")
 
         # 調整學習率
         scheduler.step(valid_loss)
+        print(f"Learning Rate after adjustment: {optimizer.param_groups[0]['lr']:.6f}")
+
+        # 檢查 early stopping 條件
+        if epochs_no_improve >= early_stop_patience:
+            print(f"Early stopping at epoch {epoch+1}")
+            break
 
     writer.close()
 
@@ -118,6 +128,7 @@ def train_model():
     print(f"Best Train Loss: {best_train_loss:.4f}")
     print(f"Best Validation Loss: {best_valid_loss:.4f}")
     print(f"Best Validation Accuracy: {best_valid_acc:.4f}")
+    print(f"Best model saved at epoch: {best_epoch}")
 
 # 訓練模型
 train_model()
