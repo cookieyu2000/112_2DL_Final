@@ -8,13 +8,14 @@ from torchvision import transforms
 from torch.utils.data import DataLoader
 from config import Config
 import torch
-import json
-import pickle
+import h5py
+import numpy as np
+from concurrent.futures import ThreadPoolExecutor
 
 # 定義圖像路徑和輸出資料夾
 image_paths = 'data/augmented_images'
 output_images_folder = 'images'
-cache_path = 'data/cache.pkl'  # 定義快取文件路徑
+cache_path = 'data/train_cache.h5'  # 定義快取文件路徑
 
 # 定義支援快取的自定義數據集類
 class CachedDataset(Dataset):
@@ -52,16 +53,27 @@ class CachedDataset(Dataset):
 
     # 保存快取
     def save_cache(self):
-        with open(self.cache_file, 'wb') as f:
-            pickle.dump(self.cache, f)
+        with h5py.File(self.cache_file, 'w') as f:
+            for idx, (image, label) in self.cache.items():
+                grp = f.create_group(str(idx))
+                grp.create_dataset('image', data=image.numpy())
+                grp.create_dataset('label', data=label)
         print(f'Cache saved to {self.cache_file}')
 
     # 載入快取
     def load_cache(self):
-        with open(self.cache_file, 'rb') as f:
-            self.cache = pickle.load(f)
+        with h5py.File(self.cache_file, 'r') as f:
+            with ThreadPoolExecutor() as executor:
+                futures = [executor.submit(self._load_single_item, f, key) for key in f.keys()]
+                for future in futures:
+                    future.result()
         print(f'Cache loaded from {self.cache_file}')
 
+    def _load_single_item(self, f, key):
+        idx = int(key)
+        image = torch.tensor(f[key]['image'][:])
+        label = int(f[key]['label'][()])
+        self.cache[idx] = (image, label)
 
 # 定義函數繪製並保存餅圖
 def plot_pie_chart(data, title, filename):
