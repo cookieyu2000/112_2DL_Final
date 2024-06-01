@@ -2,6 +2,7 @@
 import torch
 from torch import nn
 import torchvision.models as models
+from torchsummary import summary
 
 class CassavaResNet50(nn.Module):
     def __init__(self):
@@ -34,3 +35,4 @@ class CassavaResNet50(nn.Module):
         x = self.fc2(x)
         x = self.softmax(x)
         return x
+    

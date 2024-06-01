@@ -1,3 +1,4 @@
+# train.py
 import torch
 from torch import nn
 from dataloader import train_loader, valid_loader
@@ -19,8 +20,8 @@ import time
 # 启动 TensorBoard
 def start_tensorboard(log_dir):
     subprocess.Popen(['tensorboard', '--logdir', log_dir, '--port', '3000'])
-    time.sleep(5)  # 等待 TensorBoard 启动
-    webbrowser.open('http://localhost:3000')
+    # time.sleep(5)  # 等待 TensorBoard 启动
+    # webbrowser.open('http://localhost:3000')
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = CassavaResNet50().to(device)
@@ -29,11 +30,11 @@ criterion = CrossEntropyLoss()
 scheduler = ReduceLROnPlateau(optimizer, 'min', patience=config.PATIENCE, factor=config.DECAY_FACTOR, verbose=True)
 
 # 打印模型摘要
-summary(model, (3, 512, 512))
+summary(model, (3, 224, 224))
 
 # 定義訓練函數
 def train_model():
-    log_dir = 'runs'
+    log_dir = 'runs/second'
     writer = SummaryWriter(log_dir)
     start_tensorboard(log_dir)  # 启动 TensorBoard
     best_valid_loss = float('inf')
@@ -50,8 +51,10 @@ def train_model():
         model.train()
         train_loss = 0.0
         train_acc = 0.0
+        
         for images, labels in tqdm.tqdm(train_loader):
-            images, labels = images.to(device), labels.to(device)
+            # print(f'images shape: {images.shape}, labels shape: {labels.shape}')
+            images, labels = images.to(device), labels.to(device) 
             optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -75,7 +78,7 @@ def train_model():
         all_preds = []
         with torch.no_grad():
             for images, labels in tqdm.tqdm(valid_loader):
-                images, labels = images.to(device), labels.to(device)
+                images, labels = images.to(device), labels.to(device)  
                 outputs = model(images)
                 loss = criterion(outputs, labels)
                 valid_loss += loss.item()
