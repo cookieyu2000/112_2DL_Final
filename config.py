@@ -4,7 +4,7 @@ class Config:
     VAL_SPLIT = 0.3
     TEST_SPLIT = 0.5
     IMAGE_SIZE = [512, 512]
-    BATCH_SIZE = 128
+    BATCH_SIZE = 32
     EPOCHS = 50
     VERBOSE = 1
     CLASSES = ['0', '1', '2', '3', '4']

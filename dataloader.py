@@ -17,7 +17,6 @@ image_paths = 'data/augmented_images'
 output_images_folder = 'images'
 cache_path = 'data/train_cache.h5'  # 定義快取文件路徑
 
-# 定義支援快取的自定義數據集類
 class CachedDataset(Dataset):
     def __init__(self, dataframe, label_map, transform=None, cache_file=None):
         self.dataframe = dataframe
@@ -29,6 +28,7 @@ class CachedDataset(Dataset):
         # 如果快取文件存在，載入快取
         if cache_file and os.path.exists(cache_file):
             self.load_cache()
+            print(f'Cache loaded from {cache_file}')
 
     def __len__(self):
         return len(self.dataframe)
@@ -53,27 +53,36 @@ class CachedDataset(Dataset):
 
     # 保存快取
     def save_cache(self):
-        with h5py.File(self.cache_file, 'w') as f:
-            for idx, (image, label) in self.cache.items():
-                grp = f.create_group(str(idx))
-                grp.create_dataset('image', data=image.numpy())
-                grp.create_dataset('label', data=label)
-        print(f'Cache saved to {self.cache_file}')
+        try:
+            with h5py.File(self.cache_file, 'w') as f:
+                for idx, (image, label) in self.cache.items():
+                    grp = f.create_group(str(idx))
+                    grp.create_dataset('image', data=image.numpy())
+                    grp.create_dataset('label', data=label)
+            print(f'Cache saved to {self.cache_file}')  # 添加日誌信息
+        except Exception as e:
+            print(f"Error saving cache: {e}")  # 添加異常處理和日誌信息
 
     # 載入快取
     def load_cache(self):
-        with h5py.File(self.cache_file, 'r') as f:
-            with ThreadPoolExecutor() as executor:
-                futures = [executor.submit(self._load_single_item, f, key) for key in f.keys()]
-                for future in futures:
-                    future.result()
-        print(f'Cache loaded from {self.cache_file}')
+        try:
+            with h5py.File(self.cache_file, 'r') as f:
+                with ThreadPoolExecutor() as executor:  # 多線程加載快取文件
+                    futures = [executor.submit(self._load_single_item, f, key) for key in f.keys()]
+                    for future in futures:
+                        future.result()
+            # print(f'Cache loaded from {self.cache_file}')  # 添加日誌信息
+        except Exception as e:
+            print(f"Error loading cache: {e}")  # 添加異常處理和日誌信息
 
     def _load_single_item(self, f, key):
-        idx = int(key)
-        image = torch.tensor(f[key]['image'][:])
-        label = int(f[key]['label'][()])
-        self.cache[idx] = (image, label)
+        try:
+            idx = int(key)
+            image = torch.tensor(f[key]['image'][:])
+            label = int(f[key]['label'][()])
+            self.cache[idx] = (image, label)
+        except Exception as e:
+            print(f"Error loading item {key}: {e}")  # 添加異常處理和日誌信息
 
 # 定義函數繪製並保存餅圖
 def plot_pie_chart(data, title, filename):
@@ -108,6 +117,8 @@ train_df['image'] = train_df['image_path'].apply(lambda x: x.split('/')[-1]) # �
 train_data, valid_data = train_test_split(train_df, test_size=0.2, stratify=train_df['label'], random_state=42, shuffle=True)
 valid_data, test_data = train_test_split(valid_data, test_size=0.5, stratify=valid_data['label'], random_state=42, shuffle=True)
 
+print(f'Training data: {len(train_data)}\nValidation data: {len(valid_data)}\nTest data: {len(test_data)}')
+
 # # 繪製並保存餅圖
 # plot_pie_chart(train_data, 'Training Data Distribution', 'train_data_distribution.png')
 # plot_pie_chart(valid_data, 'Validation Data Distribution', 'valid_data_distribution.png')
@@ -118,10 +129,11 @@ class_counts = train_data['label'].value_counts()
 total_samples = len(train_data)
 class_weights = {label: total_samples / count for label, count in class_counts.items()}
 
-# # 逐行打印類別權重
-# print("Class Weights:")
-# for label, weight in class_weights.items():
-#     print(f'Class {label}: {weight}')
+
+# 逐行打印類別權重
+print("Class Weights:")
+for label, weight in class_weights.items():
+    print(f'Class {label}: {weight}')
 
 # 定義圖像變換
 transform = transforms.Compose([
@@ -130,7 +142,7 @@ transform = transforms.Compose([
     transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 ])
 
-# 創建數據集實例
+# 創建數據集實例並保存快取
 train_dataset = CachedDataset(train_data, reversed_standard_map, transform=transform, cache_file=cache_path)
 valid_dataset = CachedDataset(valid_data, reversed_standard_map, transform=transform, cache_file=cache_path)
 test_dataset = CachedDataset(test_data, reversed_standard_map, transform=transform, cache_file=cache_path)
@@ -144,10 +156,10 @@ test_dataset.save_cache()
 # print(f'Validation dataset size: {len(valid_dataset)}')
 # print(f'Test dataset size: {len(test_dataset)}')
 
-# 創建DataLoader
-train_loader = DataLoader(train_dataset, batch_size=Config.BATCH_SIZE, shuffle=True)
-valid_loader = DataLoader(valid_dataset, batch_size=Config.BATCH_SIZE, shuffle=False)
-test_loader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE, shuffle=False)
+# 使用pin_memory選項並設置num_workers為0來取消多線程加載數據
+train_loader = DataLoader(train_dataset, batch_size=Config.BATCH_SIZE, shuffle=True, num_workers=0, pin_memory=True)
+valid_loader = DataLoader(valid_dataset, batch_size=Config.BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
+test_loader = DataLoader(test_dataset, batch_size=Config.BATCH_SIZE, shuffle=False, num_workers=0, pin_memory=True)
 
 # print(f'Training dataset size: {len(train_loader)}')
 # print(f'Train dataset shape: {train_loader.dataset[0][0].shape}') # C, H, W
